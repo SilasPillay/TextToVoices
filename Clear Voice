@@ -1,0 +1,152 @@
+from flask import Flask, request, send_from_directory, render_template
+from gtts import gTTS  # Replace with a more robust TTS library if needed.
+import os
+from pydub import AudioSegment
+
+app = Flask(__name__)
+UPLOAD_FOLDER = 'uploads'  # Temporary folder for audio files
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+#  **IMPORTANT:** Replace this with a list of 20 actual voice options from your chosen TTS library
+voices = [
+    {"id": 1, "name": "Voice 1"},
+    {"id": 2, "name": "Voice 2"},
+    # ... add 18 more voices ...
+]
+
+@app.route('/', methods=['GET'])
+def index():
+    return render_template('index.html', voices=voices)  # Pass voice options to HTML
+
+@app.route('/tts', methods=['POST'])
+def tts():
+    text = request.form['text']
+    voice_id = int(request.form['voice'])  # Get voice ID from form
+
+    # Find the voice based on ID (replace with your actual voice selection logic)
+    selected_voice = next((v for v in voices if v['id'] == voice_id), None)
+    if selected_voice is None:
+      return "Voice not found", 400
+
+
+    try:
+        tts = gTTS(text=text, lang='en', tld='com') # Replace 'en' with appropriate language code and tld if needed.  Modify this line to use your chosen TTS library and selected voice.
+        filename = os.path.join(app.config['UPLOAD_FOLDER'], 'audio.mp3')
+        tts.save(filename)
+
+        #Convert to WAV if needed.  Add Error Handling!
+        #sound = AudioSegment.from_mp3(filename)
+        #wav_filename = filename.replace(".mp3", ".wav")
+        #sound.export(wav_filename, format="wav")
+
+        return "Success", 200 # Or return a JSON with download links.
+
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
+@app.route('/download/<filename>')
+def download(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+<!DOCTYPE html>
+<html>
+<head>
+<title>Text-to-Speech App</title>
+<style>
+body { font-family: sans-serif; }
+#container { display: flex; flex-direction: column; align-items: center; }
+</style>
+</head>
+<body>
+<div id="container">
+  <h1>Text-to-Speech</h1>
+  <textarea id="text" placeholder="Enter text here" rows="5" cols="50"></textarea>
+
+  <select id="voiceSelect">
+    </select>
+
+  <button id="generate">Generate Audio</button>
+
+  <div id="downloads">
+    <a id="downloadWAV" download="audio.wav">Download WAV</a><br>
+    <a id="downloadMP3" download="audio.mp3">Download MP3</a>
+  </div>
+
+  <audio id="audioPreview" controls></audio>
+  <div id="status"></div> </div>
+
+<script>
+const textInput = document.getElementById('text');
+const voiceSelect = document.getElementById('voiceSelect');
+const generateButton = document.getElementById('generate');
+const downloadWAV = document.getElementById('downloadWAV');
+const downloadMP3 = document.getElementById('downloadMP3');
+const audioPreview = document.getElementById('audioPreview');
+const statusDiv = document.getElementById('status');
+
+// Fetch voice options from the backend (modify this if your backend provides the data differently)
+fetch('/voices') //Assuming a '/voices' endpoint on your backend.
+  .then(response => response.json())
+  .then(voices => {
+    voices.forEach(voice => {
+      const option = document.createElement('option');
+      option.value = voice.id;
+      option.text = voice.name;
+      voiceSelect.appendChild(option);
+    });
+  })
+  .catch(error => console.error('Error fetching voices:', error));
+
+
+generateButton.addEventListener('click', () => {
+  const text = textInput.value;
+  const voiceId = voiceSelect.value;
+
+  if (text.trim() === "") {
+    statusDiv.textContent = "Please enter text.";
+    return;
+  }
+
+  statusDiv.textContent = "Generating...";
+  fetch('/tts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceId)}`,
+  })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      statusDiv.textContent = "Download links ready!";
+      downloadWAV.href = `/download/audio.wav`;
+      downloadMP3.href = `/download/audio.mp3`;
+    })
+    .catch(error => {
+      statusDiv.textContent = `Error: ${error}`;
+    });
+});
+
+
+
+//Audio Preview (requires modification depending on your backend response)
+voiceSelect.addEventListener('change', () => {
+  const voiceId = voiceSelect.value;
+  //Fetch a preview audio from your backend
+  fetch(`/voicePreview/${voiceId}`) //You'll need a backend endpoint for this.
+    .then(response => response.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      audioPreview.src = url;
+    });
+});
+
+
+</script>
+</body>
+</html>
